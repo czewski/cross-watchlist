@@ -1,7 +1,7 @@
 # cross-watchlist
 cross watchlist from different profiles from letterboxd
 
-        [Output](image.png)
+![Output](https://github.com/czewski/cross-watchlist/blob/main/image.png?raw=true
 
 TODO 
     - It literally doesn't check for errors
