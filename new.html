@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watchlist Matcher</title>
+    <script src="https://unpkg.com/htmx.org/dist/htmx.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 20px;
+            /* Add margin to the body */
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 400px;
+            margin: 0 auto;
+            /* Center the container horizontally */
+        }
+
+        .input-group {
+            margin-bottom: 10px;
+        }
+
+        .input-group input {
+            padding: 10px;
+            width: calc(100% - 22px);
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        .buttons {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .buttons button {
+            padding: 10px;
+            width: calc(50% - 5px);
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .buttons .add {
+            background-color: #28a745;
+        }
+
+        .buttons .remove {
+            background-color: #dc3545;
+        }
+
+        .buttons button:hover {
+            opacity: 0.8;
+        }
+
+        #output {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #fafafa;
+            display: none;
+            /* Hide by default */
+        }
+
+        #results {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #fff;
+            padding-left: 20px;
+            /* Indent the list */
+            display: none;
+            /* Hide by default */
+        }
+
+        #results.visible {
+            display: block;
+            /* Show only when visible class is applied */
+        }
+
+        #results li {
+            margin-bottom: 5px;
+            list-style-type: decimal;
+            /* Use numbers for list items */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <form id="dynamicForm" hx-post="/submit-form">
+            <div class="buttons">
+                <button type="button" class="add" onclick="addInput()">Add Input</button>
+                <button type="button" class="remove" onclick="removeInput()">Remove Last Input</button>
+            </div>
+            <div class="input-group">
+                <input type="text" name="input1" placeholder="Enter value">
+            </div>
+            <div class="input-group">
+                <input type="text" name="input2" placeholder="Enter value">
+            </div>
+            <button type="submit">Submit</button>
+        </form>
+        <div id="output">
+            <h2>Submitted Results</h2>
+            <ol id="results"></ol>
+        </div>
+    </div>
+
+    <script>
+        let inputCount = 2;
+
+        function addInput() {
+            inputCount++;
+            const inputGroup = document.createElement('div');
+            inputGroup.className = 'input-group';
+            inputGroup.innerHTML = `<input type="text" name="input${inputCount}" placeholder="Enter value">`;
+            document.getElementById('dynamicForm').insertBefore(inputGroup, document.querySelector('form button[type="submit"]'));
+        }
+
+        function removeInput() {
+            const form = document.getElementById('dynamicForm');
+            const inputGroups = form.getElementsByClassName('input-group');
+            if (inputGroups.length > 1) {
+                inputGroups[inputGroups.length - 1].remove();
+                inputCount--;
+            }
+        }
+
+        document.getElementById('dynamicForm').addEventListener('htmx:afterRequest', function (event) {
+            const results = event.detail.xhr.response.trim().split('\n');
+            const resultsList = document.getElementById('results');
+            resultsList.innerHTML = ''; // Clear previous results
+            results.forEach(result => {
+                const li = document.createElement('li');
+                li.textContent = result.trim(); // Trim extra spaces
+                resultsList.appendChild(li);
+            });
+            document.getElementById('output').style.display = 'block'; // Show the output div
+            resultsList.classList.add('visible'); // Show the results list
+            document.getElementById('dynamicForm').style.display = 'none';
+        });
+    </script>
+</body>
+
+</html>
