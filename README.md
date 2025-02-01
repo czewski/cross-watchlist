@@ -9,6 +9,8 @@ TODO
     - move sidebar to top? 
 
     - add functions to the new modes
+    - images in result
+    - search a vps (no need for db)
     - It literally doesn't check for errors
         - IT WILL BREAK if you try to use: empty watchlists, invalid users!
     
