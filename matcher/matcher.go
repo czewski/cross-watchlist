@@ -1,112 +1,238 @@
 package matcher
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
-func Do(users []string) []string {
-	profiles := getLists(users)
-	matches := matchLists(profiles, users)
-	return matches
+var (
+	client = &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	pageRe    = regexp.MustCompile(`class="paginate-page"><a href="[^"]+">(\d+)</a>`)
+	movieRe   = regexp.MustCompile(`data-film-slug="([a-z-]+)"`)
+	cache     = sync.Map{}
+	cacheTTL  = 5 * time.Minute
+	userAgent = "Mozilla/5.0 (compatible; WatchlistMatcher/1.0; +https://github.com/your/repo)"
+)
+
+type CacheItem struct {
+	Movies    []string
+	ExpiresAt time.Time
 }
 
-func matchLists(movieSlugs map[string][]string, users []string) []string {
-	countUsers := len(users)
-	var matches []string
+func Do(users []string) []string {
+	profiles := getListsConcurrent(users)
+	if len(profiles) == 0 {
+		return nil
+	}
+	return intersectAll(profiles, users)
+}
 
-	for i := 0; i < countUsers; i++ {
-		if i == 0 {
-			matches = movieSlugs[users[i]]
-		} else {
-			matches = hashGeneric(matches, movieSlugs[users[i]])
+func intersectAll(profiles map[string][]string, users []string) []string {
+	if len(users) == 0 {
+		return nil
+	}
+
+	// Start with smallest slice to minimize comparisons
+	smallestIndex := 0
+	for i := 1; i < len(users); i++ {
+		if len(profiles[users[i]]) < len(profiles[users[smallestIndex]]) {
+			smallestIndex = i
 		}
 	}
 
-	return matches
+	result := profiles[users[smallestIndex]]
+	for i, user := range users {
+		if i == smallestIndex {
+			continue
+		}
+		result = hashIntersect(result, profiles[user])
+		if len(result) == 0 {
+			break
+		}
+	}
+	return result
 }
 
-// FROM: https://github.com/juliangruber/go-intersect/blob/master/intersect.go
-// Hash has complexity: O(n * x) where x is a factor of hash function efficiency (between 1 and 2)
-func hashGeneric[T comparable](a []T, b []T) []T {
-	set := make([]T, 0)
-	hash := make(map[T]struct{})
+func hashIntersect(a, b []string) []string {
+	set := make(map[string]struct{}, len(a))
+	result := make([]string, 0, min(len(a), len(b)))
 
 	for _, v := range a {
-		hash[v] = struct{}{}
+		set[v] = struct{}{}
 	}
 
 	for _, v := range b {
-		if _, ok := hash[v]; ok {
-			set = append(set, v)
+		if _, exists := set[v]; exists {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
+func getListsConcurrent(users []string) map[string][]string {
+	//var wg sync.WaitGroup
+	mu := sync.Mutex{}
+	profiles := make(map[string][]string, len(users))
+
+	g, ctx := errgroup.WithContext(context.Background())
+
+	for _, user := range users {
+		user := user // Capture loop variable
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				movies, err := getCachedUserMovies(user)
+				if err != nil {
+					return err
+				}
+
+				mu.Lock()
+				profiles[user] = movies
+				mu.Unlock()
+				return nil
+			}
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		fmt.Printf("Error fetching data: %v\n", err)
+		return nil
+	}
+
+	return profiles
+}
+
+func getCachedUserMovies(user string) ([]string, error) {
+	if cached, ok := cache.Load(user); ok {
+		item := cached.(CacheItem)
+		if time.Now().Before(item.ExpiresAt) {
+			return item.Movies, nil
 		}
 	}
 
-	return set
-}
-
-func getLists(users []string) map[string][]string {
-	usersWatchlist := make(map[string][]string, len(users))
-	for _, user := range users {
-		usersWatchlist[user] = movieSlugsFromUser(user)
+	movies, err := movieSlugsFromUser(user)
+	if err != nil {
+		return nil, err
 	}
 
-	return usersWatchlist
+	cache.Store(user, CacheItem{
+		Movies:    movies,
+		ExpiresAt: time.Now().Add(cacheTTL),
+	})
+
+	return movies, nil
 }
 
-func movieSlugsFromUser(user string) (movieIds []string) {
-	//Request
-	resp, err := http.Get("https://letterboxd.com/" + user + "/watchlist/page/1/")
+func movieSlugsFromUser(user string) ([]string, error) {
+	// Get first page to determine total pages
+	body, err := fetchPage(user, 1)
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		return nil, err
+	}
+
+	totalPages := parseTotalPages(body)
+	if totalPages == 0 {
+		return nil, fmt.Errorf("no pages found")
+	}
+
+	// Collect all pages concurrently
+	var mu sync.Mutex
+	var movies []string
+	g, ctx := errgroup.WithContext(context.Background())
+
+	for page := 1; page <= totalPages; page++ {
+		page := page
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				body, err := fetchPage(user, page)
+				if err != nil {
+					return err
+				}
+
+				pageMovies := parseMovies(body)
+				mu.Lock()
+				movies = append(movies, pageMovies...)
+				mu.Unlock()
+				return nil
+			}
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return unique(movies), nil
+}
+
+func fetchPage(user string, page int) (string, error) {
+	url := fmt.Sprintf("https://letterboxd.com/%s/watchlist/page/%d/", user, page)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch page: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body := &strings.Builder{}
+	_, err = io.Copy(body, resp.Body)
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		return "", fmt.Errorf("failed to read body: %w", err)
 	}
 
-	// Get number of pages
-	pattern := `class="paginate-page"><a href="[^"]+">(\d+)</a>`
-	re := regexp.MustCompile(pattern)
-	match := re.FindAllStringSubmatch(string(body), -1)
-	pages := match[2][1]
-	numberOfPages, _ := strconv.Atoi(pages)
+	return body.String(), nil
+}
 
-	// scrap page + go to next
-	for i := 1; i <= numberOfPages+1; i++ {
-		resp, err := http.Get("https://letterboxd.com/" + user + "/watchlist/page/" + strconv.Itoa(i) + "/")
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
-		defer resp.Body.Close()
+func parseTotalPages(body string) int {
+	matches := pageRe.FindAllStringSubmatch(body, -1)
+	if len(matches) < 3 {
+		return 1
+	}
+	lastPage, _ := strconv.Atoi(matches[len(matches)-1][1])
+	return lastPage
+}
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
-
-		//pattern = `data-film-id="(\d+)"`
-		pattern = `data-film-slug="([a-z-]+)"`
-		re = regexp.MustCompile(pattern)
-		matches := re.FindAllStringSubmatch(string(body), -1)
-
-		if len(matches) > 0 {
-			for _, match := range matches {
-				if len(match) > 1 {
-					movieIds = append(movieIds, match[1])
-				}
-			}
+func parseMovies(body string) []string {
+	matches := movieRe.FindAllStringSubmatch(body, -1)
+	movies := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 {
+			movies = append(movies, match[1])
 		}
 	}
+	return movies
+}
 
-	return movieIds
+func unique(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, item := range slice {
+		if _, value := keys[item]; !value {
+			keys[item] = true
+			list = append(list, item)
+		}
+	}
+	return list
 }

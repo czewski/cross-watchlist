@@ -6,115 +6,92 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Watchlist Matcher</title>
     <script src="https://unpkg.com/htmx.org/dist/htmx.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-            margin: 20px;
-            /* Add margin to the body */
+        /* Smooth fade-in animation */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
         }
 
-        .container {
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            width: 400px;
-            margin: 0 auto;
-            /* Center the container horizontally */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
-        .input-group {
-            margin-bottom: 10px;
+        .sidebar {
+            width: 250px;
+            transition: transform 0.3s ease-in-out;
         }
 
-        .input-group input {
-            padding: 10px;
-            width: calc(100% - 22px);
-            border: 1px solid #ccc;
-            border-radius: 5px;
-        }
-
-        .buttons {
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .buttons button {
-            padding: 10px;
-            width: calc(50% - 5px);
-            border: none;
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        .buttons .add {
-            background-color: #28a745;
-        }
-
-        .buttons .remove {
-            background-color: #dc3545;
-        }
-
-        .buttons button:hover {
-            opacity: 0.8;
-        }
-
-        #output {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #fafafa;
-            display: none;
-            /* Hide by default */
-        }
-
-        #results {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #fff;
-            padding-left: 20px;
-            /* Indent the list */
-            display: none;
-            /* Hide by default */
-        }
-
-        #results.visible {
-            display: block;
-            /* Show only when visible class is applied */
-        }
-
-        #results li {
-            margin-bottom: 5px;
-            list-style-type: decimal;
-            /* Use numbers for list items */
+        .sidebar-hidden {
+            transform: translateX(100%);
         }
     </style>
 </head>
 
-<body>
-    <div class="container">
-        <form id="dynamicForm" hx-post="/submit-form">
-            <div class="buttons">
-                <button type="button" class="add" onclick="addInput()">Add Input</button>
-                <button type="button" class="remove" onclick="removeInput()">Remove Last Input</button>
+<body class="bg-gradient-to-r from-gray-50 to-blue-100 min-h-screen flex items-center justify-center p-5">
+    <div class="fixed right-0 top-0 h-full sidebar bg-white shadow-lg p-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-6">Functions</h2>
+        <button onclick="showRandomFromList()"
+            class="w-full bg-purple-500 text-white py-2 px-4 rounded-xl mb-4 hover:bg-purple-600 transition transform hover:scale-105 shadow-md">
+            Random from List
+        </button>
+        <button onclick="showRandomFromTrending()"
+            class="w-full bg-teal-500 text-white py-2 px-4 rounded-xl mb-4 hover:bg-teal-600 transition transform hover:scale-105 shadow-md">
+            Random from Trending
+        </button>
+        <button onclick="showSuggestionsBasedOnProfile()"
+            class="w-full bg-orange-500 text-white py-2 px-4 rounded-xl mb-4 hover:bg-orange-600 transition transform hover:scale-105 shadow-md">
+            Suggestions based on Profile
+        </button>
+        <button onclick="showCrossWatchlist()"
+            class="w-full bg-gray-500 text-white py-2 px-4 rounded-xl hover:bg-gray-600 transition transform hover:scale-105 shadow-md">
+            Cross Watchlist
+        </button>
+    </div>
+
+    <div class="max-w-3xl w-full bg-white rounded-3xl shadow-xl overflow-hidden p-10">
+        <h1 class="text-4xl font-extrabold text-gray-800 text-center mb-8">Watchlist Matcher</h1>
+
+        <form id="dynamicForm" hx-post="/submit-form" class="space-y-6">
+            <div id="formContent">
+                <div class="flex justify-between gap-4">
+                    <button type="button" onclick="addInput()"
+                        class="flex-1 bg-green-500 text-white py-3 px-6 rounded-xl hover:bg-green-600 transition transform hover:scale-105 shadow-md">
+                        + Add Input
+                    </button>
+                    <button type="button" onclick="removeInput()"
+                        class="flex-1 bg-red-500 text-white py-3 px-6 rounded-xl hover:bg-red-600 transition transform hover:scale-105 shadow-md">
+                        - Remove Input
+                    </button>
+                </div>
+
+                <div id="inputContainer" class="space-y-4" style="padding-top: 1em">
+                    <input type="text" name="input1" placeholder="Enter value"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                    <input type="text" name="input2" placeholder="Enter value"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                </div>
             </div>
-            <div class="input-group">
-                <input type="text" name="input1" placeholder="Enter value">
-            </div>
-            <div class="input-group">
-                <input type="text" name="input2" placeholder="Enter value">
-            </div>
-            <button type="submit">Submit</button>
+
+            <button type="submit"
+                class="w-full bg-blue-600 text-white py-3 px-6 rounded-xl hover:bg-blue-700 transition transform hover:scale-105 shadow-md">
+                Submit
+            </button>
         </form>
-        <div id="output">
-            <h2>Submitted Results</h2>
-            <ol id="results"></ol>
+
+        <div id="output" class="mt-8 hidden fade-in text-center">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Submitted Results</h2>
+            <ol id="results" class="list-decimal pl-5 space-y-2 text-gray-700"></ol>
+            <button onclick="goBack()"
+                class="mt-6 bg-gray-500 text-white py-2 px-4 rounded-xl hover:bg-gray-600 transition transform hover:scale-105 shadow-md">
+                ⬅ Back
+            </button>
         </div>
     </div>
 
@@ -123,33 +100,109 @@
 
         function addInput() {
             inputCount++;
-            const inputGroup = document.createElement('div');
-            inputGroup.className = 'input-group';
-            inputGroup.innerHTML = `<input type="text" name="input${inputCount}" placeholder="Enter value">`;
-            document.getElementById('dynamicForm').insertBefore(inputGroup, document.querySelector('form button[type="submit"]'));
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.name = `input${inputCount}`;
+            input.placeholder = 'Enter value';
+            input.className = 'w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition';
+            document.getElementById('inputContainer').appendChild(input);
         }
 
         function removeInput() {
-            const form = document.getElementById('dynamicForm');
-            const inputGroups = form.getElementsByClassName('input-group');
-            if (inputGroups.length > 1) {
-                inputGroups[inputGroups.length - 1].remove();
+            const inputs = document.querySelectorAll('#inputContainer input');
+            if (inputs.length > 1) {
+                inputs[inputs.length - 1].remove();
                 inputCount--;
             }
         }
 
+        // Store the original form HTML before submission
+        let originalFormHTML = document.getElementById('dynamicForm').innerHTML;
+
+
+        function showRandomFromList() {
+            currentForm = 'randomFromList';
+            document.getElementById('formContent').innerHTML = `
+                <div class="space-y-4">
+                    <input type="text" name="list" placeholder="Enter list"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                </div>`;
+            htmx.process(document.getElementById('dynamicForm')); // Reinitialize HTMX
+        }
+
+        function showRandomFromTrending() {
+            currentForm = 'randomFromTrending';
+            document.getElementById('formContent').innerHTML = `
+                <div class="text-center py-6">
+                    <p class="text-gray-600">Click the button to generate a random trending item</p>
+                </div>`;
+            htmx.process(document.getElementById('dynamicForm')); // Reinitialize HTMX
+        }
+
+        function showSuggestionsBasedOnProfile() {
+            currentForm = 'suggestionsBasedOnProfile';
+            document.getElementById('formContent').innerHTML = `
+                <div class="space-y-4">
+                    <input type="text" name="profile" placeholder="Enter profile"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                </div>`;
+            htmx.process(document.getElementById('dynamicForm')); // Reinitialize HTMX
+        }
+
+        function showCrossWatchlist() {
+            currentForm = 'crossWatchlist';
+            document.getElementById('formContent').innerHTML = `
+                <div class="flex justify-between gap-4">
+                    <button type="button" onclick="addInput()"
+                        class="flex-1 bg-green-500 text-white py-3 px-6 rounded-xl hover:bg-green-600 transition transform hover:scale-105 shadow-md">
+                        + Add Input
+                    </button>
+                    <button type="button" onclick="removeInput()"
+                        class="flex-1 bg-red-500 text-white py-3 px-6 rounded-xl hover:bg-red-600 transition transform hover:scale-105 shadow-md">
+                        - Remove Input
+                    </button>
+                </div>
+                <div id="inputContainer" class="space-y-4" style="padding-top: 1em">
+                    <input type="text" name="input1" placeholder="Enter value"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                    <input type="text" name="input2" placeholder="Enter value"
+                        class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                </div>`;
+            inputCount = 2;
+            htmx.process(document.getElementById('dynamicForm')); // Reinitialize HTMX
+        }
+
+        function goBack() {
+            // Restore the original form content
+            document.getElementById('dynamicForm').innerHTML = originalFormHTML;
+
+            // Hide results and show the form again
+            document.getElementById('output').classList.add('hidden');
+            document.getElementById('dynamicForm').classList.remove('hidden');
+
+            // Ensure HTMX reprocesses everything correctly
+            htmx.process(document.getElementById('dynamicForm'));
+        }
+
+        // Ensure HTMX processes the form after dynamic changes
+        document.addEventListener('DOMContentLoaded', () => {
+            htmx.process(document.body);
+        });
+
         document.getElementById('dynamicForm').addEventListener('htmx:afterRequest', function (event) {
             const results = event.detail.xhr.response.trim().split('\n');
             const resultsList = document.getElementById('results');
-            resultsList.innerHTML = ''; // Clear previous results
+            resultsList.innerHTML = '';
             results.forEach(result => {
-                const li = document.createElement('li');
-                li.textContent = result.trim(); // Trim extra spaces
-                resultsList.appendChild(li);
+                if (result.trim() !== "") {
+                    const li = document.createElement('li');
+                    li.textContent = result.trim();
+                    li.className = 'fade-in';
+                    resultsList.appendChild(li);
+                }
             });
-            document.getElementById('output').style.display = 'block'; // Show the output div
-            resultsList.classList.add('visible'); // Show the results list
-            document.getElementById('dynamicForm').style.display = 'none';
+            document.getElementById('output').classList.remove('hidden');
+            document.getElementById('dynamicForm').classList.add('hidden');
         });
     </script>
 </body>
