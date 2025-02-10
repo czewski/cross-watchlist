@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,7 +23,8 @@ var (
 	movieRe   = regexp.MustCompile(`data-film-slug="([a-z0-9-]+)"`)
 	cache     = sync.Map{}
 	cacheTTL  = 5 * time.Minute
-	userAgent = "Mozilla/5.0 (compatible; WatchlistMatcher/1.0; +https://github.com/your/repo)"
+	userAgent = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" //"Mozilla/5.0 (compatible; WatchlistMatcher/1.0; +https://github.com/your/repo)"
+
 )
 
 func getMoviesFromList(link string) ([]string, error) {
@@ -30,6 +32,17 @@ func getMoviesFromList(link string) ([]string, error) {
 	body, err := fetchMoviesFromPage(link, 1)
 	if err != nil {
 		return nil, err
+	}
+	f, err := os.Create("test.txt")
+	if err != nil {
+		fmt.Println(err)
+		return nil, nil
+	}
+	_, err = f.WriteString(body)
+	if err != nil {
+		fmt.Println(err)
+		f.Close()
+		return nil, nil
 	}
 
 	totalPages := parseTotalPages(body)
@@ -73,6 +86,9 @@ func fetchMoviesFromPage(initialLink string, page int) (string, error) {
 	url := fmt.Sprintf("%s/page/%d/", initialLink, page)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Connection", "keep-alive")
 
 	resp, err := client.Do(req)
 	if err != nil {

@@ -14,12 +14,15 @@ type FormData struct {
 }
 
 func main() {
-	x := []string{"https://letterboxd.com/dave/list/official-top-250-narrative-feature-films"}
-	matcher.RandomFromLists(x)
+	// x := []string{"https://letterboxd.com/dave/list/official-top-250-narrative-feature-films"}
+	// matcher.RandomFromLists(x)
+
+	_, _ = matcher.RandomFromTrending()
+
 	http.HandleFunc("/", handleIndex)
 	http.HandleFunc("/random-from-watchlists", handleCrossWatchlists) //submit-form
-	http.HandleFunc("/random-from-lists", handleShowRandomFromLists)
-	http.HandleFunc("/random-from-trending", handleShowRandomFromLists)
+	http.HandleFunc("/random-from-lists", handleRandomFromLists)
+	http.HandleFunc("/random-from-trending", handleRandomFromTrending)
 
 	//TODO: Apply random to list and return a favorite one
 	//TODO: add other 3 funcs, rename the submit-form (this changes the FE as well)
@@ -66,7 +69,7 @@ func handleRandomFromLists(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRandomFromTrending(w http.ResponseWriter, r *http.Request) {
-	matches, err := matcher.RandomFromLists()
+	matches, err := matcher.RandomFromTrending()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
