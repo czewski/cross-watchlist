@@ -3,26 +3,10 @@ package matcher
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
-)
-
-var (
-	client = &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	pageRe    = regexp.MustCompile(`class="paginate-page"><a href="[^"]+">(\d+)</a>`)
-	movieRe   = regexp.MustCompile(`data-film-slug="([a-z-]+)"`)
-	cache     = sync.Map{}
-	cacheTTL  = 5 * time.Minute
-	userAgent = "Mozilla/5.0 (compatible; WatchlistMatcher/1.0; +https://github.com/your/repo)"
 )
 
 type CacheItem struct {
@@ -30,7 +14,7 @@ type CacheItem struct {
 	ExpiresAt time.Time
 }
 
-func Do(users []string) []string {
+func CrossWatchlists(users []string) []string {
 	profiles := getListsConcurrent(users)
 	if len(profiles) == 0 {
 		return nil
@@ -59,22 +43,6 @@ func intersectAll(profiles map[string][]string, users []string) []string {
 		result = hashIntersect(result, profiles[user])
 		if len(result) == 0 {
 			break
-		}
-	}
-	return result
-}
-
-func hashIntersect(a, b []string) []string {
-	set := make(map[string]struct{}, len(a))
-	result := make([]string, 0, min(len(a), len(b)))
-
-	for _, v := range a {
-		set[v] = struct{}{}
-	}
-
-	for _, v := range b {
-		if _, exists := set[v]; exists {
-			result = append(result, v)
 		}
 	}
 	return result
@@ -137,8 +105,9 @@ func getCachedUserMovies(user string) ([]string, error) {
 }
 
 func movieSlugsFromUser(user string) ([]string, error) {
-	// Get first page to determine total pages
-	body, err := fetchPage(user, 1)
+	// first page to determine total pages
+	url := fmt.Sprintf("https://letterboxd.com/%s/watchlist", user)
+	body, err := fetchMoviesFromPage(url, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +117,7 @@ func movieSlugsFromUser(user string) ([]string, error) {
 		return nil, fmt.Errorf("no pages found")
 	}
 
-	// Collect all pages concurrently
+	// all pages concurrently
 	var mu sync.Mutex
 	var movies []string
 	g, ctx := errgroup.WithContext(context.Background())
@@ -160,7 +129,8 @@ func movieSlugsFromUser(user string) ([]string, error) {
 			case <-ctx.Done():
 				return nil
 			default:
-				body, err := fetchPage(user, page)
+				url := fmt.Sprintf("https://letterboxd.com/%s/watchlist", user)
+				body, err := fetchMoviesFromPage(url, page)
 				if err != nil {
 					return err
 				}
@@ -181,49 +151,29 @@ func movieSlugsFromUser(user string) ([]string, error) {
 	return unique(movies), nil
 }
 
-func fetchPage(user string, page int) (string, error) {
-	url := fmt.Sprintf("https://letterboxd.com/%s/watchlist/page/%d/", user, page)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("User-Agent", userAgent)
+// func fetchWatchlistPage(user string, page int) (string, error) {
+// 	url := fmt.Sprintf("https://letterboxd.com/%s/watchlist/page/%d/", user, page)
+// 	req, _ := http.NewRequest("GET", url, nil)
+// 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch page: %w", err)
-	}
-	defer resp.Body.Close()
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to fetch page: %w", err)
+// 	}
+// 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
+// 	if resp.StatusCode != http.StatusOK {
+// 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+// 	}
 
-	body := &strings.Builder{}
-	_, err = io.Copy(body, resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read body: %w", err)
-	}
+// 	body := &strings.Builder{}
+// 	_, err = io.Copy(body, resp.Body)
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to read body: %w", err)
+// 	}
 
-	return body.String(), nil
-}
-
-func parseTotalPages(body string) int {
-	matches := pageRe.FindAllStringSubmatch(body, -1)
-	if len(matches) < 3 {
-		return 1
-	}
-	lastPage, _ := strconv.Atoi(matches[len(matches)-1][1])
-	return lastPage
-}
-
-func parseMovies(body string) []string {
-	matches := movieRe.FindAllStringSubmatch(body, -1)
-	movies := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) > 1 {
-			movies = append(movies, match[1])
-		}
-	}
-	return movies
-}
+// 	return body.String(), nil
+// }
 
 func unique(slice []string) []string {
 	keys := make(map[string]bool)
